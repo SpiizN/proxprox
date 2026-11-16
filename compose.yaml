@@ -6,9 +6,11 @@ services:
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
       PROXY_TOKEN: ${PROXY_TOKEN:?Set PROXY_TOKEN in .env}
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:?Set GATEWAY_TOKEN in .env}
+      PROXY_ACME_HOST: ${PROXY_ACME_HOST:-proxy.proxprox.spiizn.xyz}
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:18080:8080"
+      - "0.0.0.0:${PROXY_HTTPS_PORT:-18443}:18443"
     networks:
       default:
       proxprox-proxy:

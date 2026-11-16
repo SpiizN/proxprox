@@ -17,7 +17,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-The API listens on `127.0.0.1:8000`, MCP on `127.0.0.1:8001/mcp`, and the proxy on `127.0.0.1:18080`. These ports are published only on localhost. The proxy requires username `proxy` and `PROXY_TOKEN` as its password. The API and MCP each require their own Bearer token.
+The API listens on `127.0.0.1:8000`, MCP on `127.0.0.1:8001/mcp`, and the local HTTP proxy on `127.0.0.1:18080`. The public HTTPS proxy listens on port `18443` by default. The proxy requires username `proxy` and `PROXY_TOKEN` as its password. The API and MCP each require their own Bearer token.
 
 ```sh
 set -a; . ./.env; set +a
@@ -142,3 +142,26 @@ api.proxprox.spiizn.xyz {
 ```
 
 Create DNS records for both names that point to the VPS, and make sure Caddy can receive traffic on ports 80 and 443. The MCP server accepts `mcp.proxprox.spiizn.xyz` as a Host header by default; `MCP_ALLOWED_HOSTS` can add or override public hostnames. The API and MCP still require their respective Bearer tokens over HTTPS. The MCP endpoint is `https://mcp.proxprox.spiizn.xyz/mcp`, and the API base URL is `https://api.proxprox.spiizn.xyz`.
+
+## Public HTTPS proxy
+
+Ensure `proxy.proxprox.spiizn.xyz` resolves to the VPS, using an `A` record or a `CNAME` to a host that resolves to the VPS. Set `PROXY_ACME_HOST` in `.env` if you use a different name. Allow inbound TCP 18443 on the VPS firewall, or set `PROXY_HTTPS_PORT` to another public port. The proxy obtains and renews its certificate using ACME HTTP-01; its certificate cache persists in `data/proxy-acme/`.
+
+Add this HTTP-only site to the existing Caddyfile and reload Caddy. Caddy must be on the `proxprox-proxy` network and reachable on public TCP port 80:
+
+```caddyfile
+http://proxy.proxprox.spiizn.xyz {
+    reverse_proxy proxprox-api:8082
+}
+```
+
+This route only serves certificate challenges. Clients connect directly to the HTTPS proxy on port 18443, not to Caddy on port 443. A regular Caddy `reverse_proxy` site does not relay forward-proxy `CONNECT` tunnels. The local HTTP proxy remains bound to loopback for local tools.
+
+After deploying the updated stack with `docker compose up -d --build`, test from another machine with a client that supports HTTPS proxies:
+
+```sh
+curl -v --proxy https://proxy.proxprox.spiizn.xyz:18443 \
+  --proxy-user "proxy:$PROXY_TOKEN" https://example.com/
+```
+
+Set `PROXY_TOKEN` in the client environment without putting the token in shell history. Do not disable TLS certificate verification. The first connection may take longer while the certificate is issued. If certificate issuance fails, check the DNS record, port 80, the Caddy route, and the `app` container logs. A plain HTTP proxy on a public port would expose the Basic authentication credentials to network observers.

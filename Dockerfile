@@ -1,6 +1,6 @@
 FROM golang:1.27-alpine AS build
 WORKDIR /src
-COPY go.mod *.go ./
+COPY go.mod go.sum *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /proxprox .
 
 FROM alpine:3.22
