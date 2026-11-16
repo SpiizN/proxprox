@@ -9,6 +9,11 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:18080:8080"
+    networks:
+      default:
+      proxprox-proxy:
+        aliases:
+          - proxprox-api
     volumes:
       - ./data:/data
     cap_drop:
@@ -31,10 +36,15 @@ services:
       API_URL: http://app:8000
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
       MCP_TOKEN: ${MCP_TOKEN:?Set MCP_TOKEN in .env}
-      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp.proxprox.spiizn.xyz,mcp.proxprox.spiizn.xyz:*}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
     ports:
       - "127.0.0.1:8001:8001"
+    networks:
+      default:
+      proxprox-proxy:
+        aliases:
+          - proxprox-mcp
     depends_on:
       app:
         condition: service_healthy
@@ -95,3 +105,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+networks:
+  proxprox-proxy:
+    name: proxprox-proxy

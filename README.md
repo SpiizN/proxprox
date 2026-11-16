@@ -112,4 +112,33 @@ Create and replace operations accept JSON. Replacing a rule requires all of its 
 
 MCP uses Streamable HTTP at `http://127.0.0.1:8001/mcp` with the `Authorization: Bearer <MCP_TOKEN>` header. It provides `add_scope`, `update_scope`, `remove_scope`, `list_scopes`, `resolve_scope`, and `get_configuration`. Agents can register and inspect scopes; upstream and VPN management remains on the administrative API.
 
-Both control ports are available locally only. For an agent on another machine, use a tunnel or an authenticated TLS frontend and preserve access controls. If the frontend forwards a public hostname to MCP, add it to `MCP_ALLOWED_HOSTS` in `.env` (for example, `mcp.example.org,mcp.example.org:*`). For a browser client, also set `MCP_ALLOWED_ORIGINS` to the exact HTTPS origin and configure CORS on the frontend.
+The control ports are published on the host's loopback interface only. Containers on the `proxprox-proxy` network can also reach them. For a remote agent, use Caddy as described below or a tunnel. If a different public hostname is forwarded to MCP, add it to `MCP_ALLOWED_HOSTS` in `.env` (for example, `mcp.example.org,mcp.example.org:*`). For a browser client, also set `MCP_ALLOWED_ORIGINS` to the exact HTTPS origin and configure CORS on the frontend.
+
+## Caddy
+
+This Compose stack creates a Docker network named `proxprox-proxy`. The API and MCP services join it as `proxprox-api:8000` and `proxprox-mcp:8001`. VPN containers remain on the stack's default network. Connect a Caddy container from another Compose project to the existing network:
+
+```yaml
+services:
+  caddy:
+    networks:
+      - proxprox-proxy
+
+networks:
+  proxprox-proxy:
+    external: true
+```
+
+Add these site blocks to Caddy's configuration:
+
+```caddyfile
+mcp.proxprox.spiizn.xyz {
+    reverse_proxy proxprox-mcp:8001
+}
+
+api.proxprox.spiizn.xyz {
+    reverse_proxy proxprox-api:8000
+}
+```
+
+Create DNS records for both names that point to the VPS, and make sure Caddy can receive traffic on ports 80 and 443. The MCP server accepts `mcp.proxprox.spiizn.xyz` as a Host header by default; `MCP_ALLOWED_HOSTS` can add or override public hostnames. The API and MCP still require their respective Bearer tokens over HTTPS. The MCP endpoint is `https://mcp.proxprox.spiizn.xyz/mcp`, and the API base URL is `https://api.proxprox.spiizn.xyz`.
