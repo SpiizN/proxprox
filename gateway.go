@@ -88,10 +88,12 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (gateway *Gateway) dial(ctx context.Context, address string) (net.Conn, error) {
 	boundDialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second, Control: bindTun0}
-	resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return boundDialer.DialContext(ctx, network, net.JoinHostPort(gateway.dnsIP, "53"))
-	}}
-	boundDialer.Resolver = resolver
+	if gateway.dnsIP != "" {
+		resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return boundDialer.DialContext(ctx, network, net.JoinHostPort(gateway.dnsIP, "53"))
+		}}
+		boundDialer.Resolver = resolver
+	}
 	connection, err := boundDialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("VPN tunnel target %s: %w", address, err)
@@ -110,7 +112,7 @@ func bindTun0(_, _ string, raw syscall.RawConn) error {
 }
 
 func runGateway(ctx context.Context, token, dnsIP, configPath, address string) error {
-	if net.ParseIP(dnsIP) == nil {
+	if dnsIP != "" && net.ParseIP(dnsIP) == nil {
 		return fmt.Errorf("VPN_DNS must be an IP address, got %q", dnsIP)
 	}
 	profilePath, err := filepath.Abs(configPath)
@@ -123,7 +125,7 @@ func runGateway(ctx context.Context, token, dnsIP, configPath, address string) e
 	if len(token) < 16 || strings.HasPrefix(token, "replace-with-") {
 		return fmt.Errorf("GATEWAY_TOKEN must be a non-placeholder secret of at least 16 characters")
 	}
-	command := exec.CommandContext(ctx, "openvpn", "--cd", filepath.Dir(profilePath), "--config", profilePath, "--dev", "tun0", "--redirect-gateway", "def1", "--auth-nocache")
+	command := exec.CommandContext(ctx, "openvpn", "--cd", filepath.Dir(profilePath), "--config", profilePath, "--dev", "tun0", "--auth-nocache")
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	if err := command.Start(); err != nil {

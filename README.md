@@ -59,9 +59,9 @@ An upstream URL can be `http://user:password@host:port` or `https://user:passwor
 
 ## OpenVPN
 
-Each VPN container has its own Docker network namespace. Its gateway accepts only authenticated `CONNECT` requests using `GATEWAY_TOKEN`. It binds outbound connections and DNS queries to `tun0`, and refuses new connections if `tun0` is unavailable. The configured DNS server must be reachable through the VPN tunnel.
+Each VPN container has its own Docker network namespace. Its gateway accepts only authenticated `CONNECT` requests using `GATEWAY_TOKEN`. It binds outbound target connections to `tun0` and refuses new connections if `tun0` is unavailable. OpenVPN supplies the routes; the gateway does not force a default route. If `VPN_DNS` is set for a container, its DNS queries use that server through `tun0`. If it is empty, the container's normal DNS resolver is used, which is useful for split-tunnel VPNs.
 
-The `vpn/example/` directory and the `vpn-example` service in `compose.yaml` are only templates. Real VPN profiles do not have to go into `vpn/example/`. Give each VPN its own directory, Compose service, and DNS setting. For example:
+The `vpn/example/` directory and the `vpn-example` service in `compose.yaml` are only templates. Real VPN profiles do not have to go into `vpn/example/`. Give each VPN its own directory and Compose service. Configure a VPN DNS server only when that VPN provides one. For example:
 
 | VPN | Host directory | Compose service and profile | DNS setting in `.env` | Registered gateway |
 | --- | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ To add `acme`:
 1. Create `vpn/acme/`. Copy the profile to `vpn/acme/client.ovpn`, along with any files it references (`ca`, `cert`, `key`, `tls-auth`, `tls-crypt`, or `pkcs12`). Relative paths in the profile resolve from `/vpn`, which maps to `vpn/acme/` for this container. If the profile embeds its certificates and keys, no additional files are needed.
 2. For username and password authentication, add `auth-user-pass /vpn/auth.txt` to `client.ovpn`. Create `vpn/acme/auth.txt` with the username on the first line and password on the second, then run `chmod 600 vpn/acme/auth.txt`. If the VPN only uses the profile's certificates and keys, `auth.txt` is unnecessary.
 3. Copy the `vpn-example` block in `compose.yaml` to a new `vpn-acme` block. In the copy, change the Compose profile to `vpn-acme`, the mount from `./vpn/example:/vpn:ro` to `./vpn/acme:/vpn:ro`, and `VPN_EXAMPLE_DNS` to `VPN_ACME_DNS`. Keep the `vpn-example` block as a template or remove it.
-4. Set `VPN_ACME_DNS` in `.env` to the IP address of a DNS server reachable through this VPN. Run `docker compose --profile vpn-acme up -d --build`, then check `docker compose ps` and `docker compose logs --tail=50 vpn-acme`.
+4. If this VPN provides a DNS server reachable through the tunnel, set `VPN_ACME_DNS` in `.env` to its IP address. Otherwise, leave it empty to use the container's normal resolver. Run `docker compose --profile vpn-acme up -d --build`, then check `docker compose ps` and `docker compose logs --tail=50 vpn-acme`.
 5. Register the gateway through the API:
 
 ```sh
@@ -88,6 +88,12 @@ Repeat these steps for each VPN in a separate directory. Do not put OpenVPN cred
 Git ignores the VPN files in these directories, except their README files. A profile that requires interactive input, such as an MFA code on every connection, needs a noninteractive method provided by the VPN before it can run in this service.
 
 A rule can specify `"vpn":"acme"` with or without an upstream. With both, traffic follows `client > VPN > upstream > destination`. If the VPN goes down, the rule fails; it does not fall back to a direct connection.
+
+### YesWeHack profile
+
+The `vpn-yeswehack` service is already defined in `compose.yaml` and mounts `vpn/yeswehack/` at `/vpn`. Save the complete profile as `vpn/yeswehack/client.ovpn`. In that file, keep `auth SHA512` and change the bare `auth-user-pass` line to `auth-user-pass /vpn/auth.txt`. The inline `ca`, `cert`, `key`, and `tls-auth` blocks do not need separate files. Put your YesWeHack VPN username on the first line of `vpn/yeswehack/auth.txt` and its password on the second, then run `chmod 600 vpn/yeswehack/client.ovpn vpn/yeswehack/auth.txt` because the profile contains a private key.
+
+YesWeHack uses split-tunnel routes for eligible scope IPs. Leave `VPN_YESWEHACK_DNS` empty unless YesWeHack supplies a DNS server reachable through the VPN. Start the service with `docker compose --profile vpn-yeswehack up -d --build`. After it is healthy, register `{"name":"yeswehack","gateway":"vpn-yeswehack:8081"}` through `POST /v1/vpns`. The VPN username and password come from your YesWeHack account by default; the platform also lets you configure a separate VPN password.
 
 ## API and MCP
 

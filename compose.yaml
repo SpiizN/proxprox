@@ -69,3 +69,29 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+  vpn-yeswehack:
+    profiles:
+      - vpn-yeswehack
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_MODE: gateway
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?Set GATEWAY_TOKEN in .env}
+      VPN_DNS: ${VPN_YESWEHACK_DNS:-}
+    volumes:
+      - ./vpn/yeswehack:/vpn:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
