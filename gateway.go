@@ -119,8 +119,20 @@ func runGateway(ctx context.Context, token, dnsIP, configPath, address string) e
 	if err != nil {
 		return fmt.Errorf("resolve OpenVPN profile %q: %w", configPath, err)
 	}
-	if _, err := os.Stat(profilePath); err != nil {
-		return fmt.Errorf("read OpenVPN profile %q: %w", configPath, err)
+	profile, err := os.Open(profilePath)
+	if err != nil {
+		return fmt.Errorf("open OpenVPN profile %q: %w", configPath, err)
+	}
+	profileInfo, statError := profile.Stat()
+	closeError := profile.Close()
+	if statError != nil {
+		return fmt.Errorf("inspect OpenVPN profile %q: %w", configPath, statError)
+	}
+	if closeError != nil {
+		return fmt.Errorf("close OpenVPN profile %q: %w", configPath, closeError)
+	}
+	if !profileInfo.Mode().IsRegular() {
+		return fmt.Errorf("OpenVPN profile %q must be a regular file", configPath)
 	}
 	if len(token) < 16 || strings.HasPrefix(token, "replace-with-") {
 		return fmt.Errorf("GATEWAY_TOKEN must be a non-placeholder secret of at least 16 characters")
