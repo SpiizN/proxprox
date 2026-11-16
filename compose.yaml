@@ -1,0 +1,71 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
+      PROXY_TOKEN: ${PROXY_TOKEN:?Set PROXY_TOKEN in .env}
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?Set GATEWAY_TOKEN in .env}
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ./data:/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    restart: unless-stopped
+    environment:
+      API_URL: http://app:8000
+      API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
+      MCP_TOKEN: ${MCP_TOKEN:?Set MCP_TOKEN in .env}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      app:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+
+  vpn-example:
+    profiles:
+      - vpn-example
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_MODE: gateway
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?Set GATEWAY_TOKEN in .env}
+      VPN_DNS: ${VPN_EXAMPLE_DNS:-}
+    volumes:
+      - ./vpn/example:/vpn:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
