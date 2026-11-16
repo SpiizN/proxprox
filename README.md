@@ -28,7 +28,7 @@ Traffic without a matching rule goes directly to its destination, as requested f
 
 ## Rules and precedence
 
-A rule contains `pattern`, `program_slug`, `upstream`, and `vpn`. The last two fields are optional. `*.example.com` matches subdomains at any depth, but does not match `example.com` itself. An exact match takes precedence over a wildcard. Among wildcards, the longest suffix wins. Patterns must be globally unique so that routing is unambiguous. Domain names and slugs must be lowercase; exact IP addresses are also accepted.
+A rule contains `pattern`, `program_slug`, `upstream`, and `vpn`. The last two fields are optional and must reference registered names, not URLs. Create upstreams and VPNs through the administrative API before referencing them in an API or MCP scope rule. `*.example.com` matches subdomains at any depth, but does not match `example.com` itself. An exact match takes precedence over a wildcard. Among wildcards, the longest suffix wins. Patterns must be globally unique so that routing is unambiguous. Domain names and slugs must be lowercase; exact IP addresses are also accepted.
 
 The slug is returned by `/v1/resolve`, listed by `/v1/config`, and can filter `/v1/rules?program_slug=...`. It is also available through the MCP tools.
 

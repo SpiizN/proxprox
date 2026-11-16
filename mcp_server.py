@@ -38,7 +38,7 @@ def api_call(method: str, path: str, payload: dict | None = None) -> dict | list
 
 @mcp.tool()
 def add_scope(program_slug: str, pattern: str, upstream: str = "", vpn: str = "") -> dict:
-    """Register a program scope and its optional upstream proxy and VPN route."""
+    """Register a scope. upstream and vpn are registered names, not URLs; administrators create them through the API."""
     return api_call("POST", "/v1/rules", {
         "program_slug": program_slug,
         "pattern": pattern,
@@ -49,7 +49,7 @@ def add_scope(program_slug: str, pattern: str, upstream: str = "", vpn: str = ""
 
 @mcp.tool()
 def update_scope(rule_id: str, program_slug: str, pattern: str, upstream: str = "", vpn: str = "") -> dict:
-    """Replace an existing scope rule by ID. All route fields are required for the new rule."""
+    """Replace a scope by ID. Supply all route fields; upstream and vpn are registered names, not URLs."""
     path = f"/v1/rules/{parse.quote(rule_id, safe='')}"
     return api_call("PUT", path, {
         "program_slug": program_slug,
