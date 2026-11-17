@@ -165,3 +165,15 @@ curl -v --proxy https://proxy.proxprox.spiizn.xyz:18443 \
 ```
 
 Set `PROXY_TOKEN` in the client environment without putting the token in shell history. Do not disable TLS certificate verification. The first connection may take longer while the certificate is issued. If certificate issuance fails, check the DNS record, port 80, the Caddy route, and the `app` container logs. A plain HTTP proxy on a public port would expose the Basic authentication credentials to network observers.
+
+## Burp Suite
+
+Burp's upstream proxy settings use an HTTP proxy host and port. On the Mac running Burp, install the local bridge once:
+
+```sh
+./scripts/install-burp-bridge-macos.sh
+```
+
+The installer builds `~/.local/bin/proxprox-bridge` and starts a macOS LaunchAgent that keeps it running after login. The bridge listens only on `127.0.0.1:18081`, verifies the public proxy's TLS certificate, and forwards all bytes to `proxy.proxprox.spiizn.xyz:18443`. It stores no proxy password. Re-run the installer after updating the bridge code. Logs are at `~/Library/Logs/proxprox-bridge.log`.
+
+In Burp Suite, open Settings > Network > Connections > Upstream proxy servers and add a rule with destination host `*`, proxy host `127.0.0.1`, proxy port `18081`, Basic authentication, username `proxy`, and password `PROXY_TOKEN`. This is an upstream rule for Burp's outgoing requests; Burp's browser-facing proxy listener remains separate. Proxprox still chooses the VPN and upstream proxy from each destination's scope rule. Keep the VPS HTTP proxy bound to `127.0.0.1`; publishing it publicly would expose Basic authentication credentials before a target's HTTPS tunnel begins.
