@@ -81,8 +81,10 @@ func newStore(path string) (*Store, error) {
 		return nil, fmt.Errorf("decode configuration %q: %w", path, err)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("configuration %q contains trailing data: %v", path, err)
+	if err := decoder.Decode(&extra); err == nil {
+		return nil, fmt.Errorf("configuration %q contains multiple JSON values", path)
+	} else if !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("decode trailing configuration data in %q: %w", path, err)
 	}
 	if err := validateState(s.state); err != nil {
 		return nil, fmt.Errorf("validate configuration %q: %w", path, err)

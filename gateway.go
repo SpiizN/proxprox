@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -108,8 +107,8 @@ func runGateway(ctx context.Context, token, dnsIP, configPath, address string) e
 	if !profileInfo.Mode().IsRegular() {
 		return fmt.Errorf("OpenVPN profile %q must be a regular file", configPath)
 	}
-	if len(token) < 16 || strings.HasPrefix(token, "replace-with-") {
-		return fmt.Errorf("GATEWAY_TOKEN must be a non-placeholder secret of at least 16 characters")
+	if err := validateSecret("GATEWAY_TOKEN", token); err != nil {
+		return err
 	}
 	command := exec.CommandContext(ctx, "openvpn", "--cd", filepath.Dir(profilePath), "--config", profilePath, "--dev", "tun0", "--auth-nocache")
 	command.Stdout = os.Stdout

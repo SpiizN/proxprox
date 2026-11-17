@@ -45,9 +45,13 @@ func runServer(ctx context.Context) error {
 	apiToken := os.Getenv("API_TOKEN")
 	proxyToken := os.Getenv("PROXY_TOKEN")
 	gatewayToken := os.Getenv("GATEWAY_TOKEN")
-	for name, value := range map[string]string{"API_TOKEN": apiToken, "PROXY_TOKEN": proxyToken, "GATEWAY_TOKEN": gatewayToken} {
-		if len(value) < 16 || strings.HasPrefix(value, "replace-with-") {
-			return fmt.Errorf("%s must be a non-placeholder secret of at least 16 characters", name)
+	for _, secret := range []struct{ name, value string }{
+		{"API_TOKEN", apiToken},
+		{"PROXY_TOKEN", proxyToken},
+		{"GATEWAY_TOKEN", gatewayToken},
+	} {
+		if err := validateSecret(secret.name, secret.value); err != nil {
+			return err
 		}
 	}
 	store, err := newStore(envOr("CONFIG_PATH", "/data/config.json"))
@@ -144,4 +148,11 @@ func runServer(ctx context.Context) error {
 	case <-ctx.Done():
 		return shutdown()
 	}
+}
+
+func validateSecret(name, value string) error {
+	if len(value) < 16 || strings.HasPrefix(value, "replace-with-") {
+		return fmt.Errorf("%s must be a non-placeholder secret of at least 16 characters", name)
+	}
+	return nil
 }

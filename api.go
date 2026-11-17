@@ -40,6 +40,18 @@ func redactUpstream(upstream Upstream) (upstreamView, error) {
 	return upstreamView{Name: upstream.Name, URL: u.String(), HasAuth: hasAuth}, nil
 }
 
+func redactUpstreams(upstreams []Upstream) ([]upstreamView, error) {
+	views := make([]upstreamView, 0, len(upstreams))
+	for _, upstream := range upstreams {
+		view, err := redactUpstream(upstream)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -53,15 +65,12 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/v1/config" && r.Method == http.MethodGet:
 		state := api.store.snapshot()
-		view := configView{Version: state.Version, Rules: state.Rules, VPNs: state.VPNs, Upstreams: make([]upstreamView, 0, len(state.Upstreams))}
-		for _, upstream := range state.Upstreams {
-			redacted, err := redactUpstream(upstream)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			view.Upstreams = append(view.Upstreams, redacted)
+		upstreams, err := redactUpstreams(state.Upstreams)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
+		view := configView{Version: state.Version, Rules: state.Rules, VPNs: state.VPNs, Upstreams: upstreams}
 		writeJSON(w, http.StatusOK, view)
 	case r.URL.Path == "/v1/resolve" && r.Method == http.MethodGet:
 		api.resolve(w, r)
@@ -214,14 +223,10 @@ func (api *API) upstreams(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		state := api.store.snapshot()
-		views := make([]upstreamView, 0, len(state.Upstreams))
-		for _, item := range state.Upstreams {
-			redacted, err := redactUpstream(item)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			views = append(views, redacted)
+		views, err := redactUpstreams(state.Upstreams)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
 		writeJSON(w, http.StatusOK, views)
 	case http.MethodPost:
@@ -411,8 +416,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 		return false
 	}
 	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "JSON request contains trailing data")
+	if err := decoder.Decode(&extra); err == nil {
+		writeError(w, http.StatusBadRequest, "JSON request contains multiple values")
+		return false
+	} else if !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode trailing JSON data: %v", err))
 		return false
 	}
 	return true
