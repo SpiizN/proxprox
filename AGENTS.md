@@ -25,25 +25,3 @@ Comments should only be written if they add real value to the code, for example:
 * Comments that provide important information that otherwise would not have been obvious
 
 `// COMPAT` is the marker for a startup migration. Keep it on the function and its call until both are removed.
-
-## Agent prompt
-
-`agent/PROMPT.md` is the runtime contract for every Pamphagos agent, not general
-documentation or a security-testing methodology.
-
-* Add an instruction only when it is broadly applicable to Pamphagos sessions and
-  omitting it would commonly cause unsafe, incorrect, or unusable behavior.
-* Keep reusable testing methodology and mutable operational knowledge in Knowledge.
-  Keep detailed tool usage in the tool's own help or documentation.
-* Do not duplicate documentation in the prompt. Direct the agent to the
-  authoritative source when it can discover the information reliably.
-* Keep instructions independent of a particular agent runtime when the required
-  outcome is portable.
-* Do not assume optional services, Knowledge content, mounts, or tools are always
-  available.
-* Verify current behavior before documenting it. Remove obsolete instructions
-  instead of adding exceptions around them.
-* Keep the prompt concise. When adding an instruction, look for wording that can
-  replace or simplify existing text instead of only appending more text.
-* After changing the prompt, read it as a whole and check for duplicated,
-  contradictory, or ambiguous instructions.
