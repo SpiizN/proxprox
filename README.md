@@ -4,15 +4,17 @@ Proxprox is an explicit HTTP proxy for bug bounty traffic. It forwards HTTP, Web
 
 ## Start the stack
 
-Docker Compose on Linux is required. VPN containers also need `/dev/net/tun`.
+Docker Compose on Linux is required. VPN containers also need `/dev/net/tun`. The default deployment does not need Caddy. Point `PROXY_ACME_HOST` at this server and allow inbound TCP 80 and `PROXY_HTTPS_PORT` (18443 by default). Proxprox serves the ACME HTTP challenge on port 80 and the authenticated HTTPS proxy on port 18443.
 
 ```sh
 test -e .env || cp .env.example .env
 # Replace API_TOKEN, PROXY_TOKEN, MCP_TOKEN, and GATEWAY_TOKEN in .env
 # with four different secrets. Generate each with: openssl rand -hex 32
-docker compose up -d --build
+docker compose up -d
 docker compose ps
 ```
+
+Compose builds the app and MCP images locally by default. The [publish workflow](.github/workflows/publish-images.yaml) also publishes `ghcr.io/spiizn/proxprox` and `ghcr.io/spiizn/proxprox-mcp` for `linux/amd64` and `linux/arm64` on pushes to `main`. To deploy those images instead, log in to GHCR if they are private and set `PROXPROX_PULL_POLICY=always` in `.env`. Set `PROXPROX_IMAGE_TAG=sha-<full commit SHA>` to pin both images to one release.
 
 | Service | Local address | Authentication |
 | --- | --- | --- |
@@ -20,6 +22,8 @@ docker compose ps
 | API | `http://127.0.0.1:8000` | Bearer `API_TOKEN` |
 | MCP | `http://127.0.0.1:8001/mcp` | Bearer `MCP_TOKEN` |
 | HTTPS proxy | `proxy.proxprox.spiizn.xyz:18443` | Basic: `proxy` / `PROXY_TOKEN` |
+
+The Go service lives in `proxprox/`, the MCP service in `mcp/`, and VPN profiles in `vpn/`. The API, MCP, and plain HTTP proxy ports bind to loopback. The HTTPS proxy is public; use its TLS endpoint for remote clients.
 
 ```sh
 set -a; . ./.env; set +a
@@ -66,7 +70,7 @@ The `vpn-yeswehack` service mounts `vpn/yeswehack/` at `/vpn`. Save the complete
 ```sh
 sudo chgrp 0 vpn/yeswehack/client.ovpn vpn/yeswehack/auth.txt
 chmod 640 vpn/yeswehack/client.ovpn vpn/yeswehack/auth.txt
-docker compose --profile vpn-yeswehack up -d --build
+docker compose --profile vpn-yeswehack up -d
 docker compose --profile vpn-yeswehack ps
 docker compose logs --tail=50 vpn-yeswehack
 ```
@@ -84,11 +88,18 @@ To add another VPN, create its own `vpn/<name>/` directory with `client.ovpn` an
 
 The gateway binds target connections to `tun0`. Set `VPN_YESWEHACK_DNS` only if the VPN provides a DNS server reachable through the tunnel. If a rule has both `vpn` and `upstream`, traffic follows client > VPN > upstream > target. If the VPN fails, that rule does not fall back to a direct route. VPN profiles and credentials are ignored by Git.
 
-## MCP and Caddy
+## MCP and optional Caddy
 
 MCP exposes `add_scope`, `update_scope`, `remove_scope`, `list_scopes`, `resolve_scope`, and `get_configuration`. Agents use the MCP Bearer token; upstream and VPN administration remains on the API.
 
-The stack creates the `proxprox-proxy` Docker network. Attach an existing Caddy service to it:
+The default deployment uses only its own Docker network. To expose the API and MCP through an existing Caddy container, add these settings to `.env` before starting or updating Proxprox:
+
+```dotenv
+COMPOSE_FILE=compose.yaml:compose.caddy.yaml
+CADDY_NETWORK=proxprox-proxy
+```
+
+The overlay requires that external Docker network to exist. Create it if needed with `docker network create proxprox-proxy`, then attach Caddy to it:
 
 ```yaml
 services:
@@ -115,7 +126,7 @@ http://proxy.proxprox.spiizn.xyz {
 }
 ```
 
-Create DNS records for these names pointing to the VPS. Caddy needs public ports 80 and 443. The HTTP-only proxy hostname route serves ACME certificate challenges for Proxprox's public HTTPS proxy. Clients connect to that proxy directly on TCP 18443, which must be allowed through the firewall. Set `PROXY_ACME_HOST` or `PROXY_HTTPS_PORT` in `.env` if those values differ.
+Create DNS records for these names pointing to the VPS. Caddy needs public ports 80 and 443. The overlay removes Proxprox's host port 80 binding; Caddy forwards only the proxy hostname's ACME challenges to Proxprox. The HTTPS proxy itself stays on public TCP 18443. Check the combined configuration with `docker compose config --quiet`, then run `docker compose up -d`. This overlay uses Compose's `!override` tag; update Docker Compose if it cannot parse that tag.
 
 Remote MCP: `https://mcp.proxprox.spiizn.xyz/mcp`. Remote API: `https://api.proxprox.spiizn.xyz`. If MCP uses another hostname, add it to `MCP_ALLOWED_HOSTS`.
 

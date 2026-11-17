@@ -1,0 +1,23 @@
+services:
+  app:
+    ports: !override
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:18080:8080"
+      - "0.0.0.0:${PROXY_HTTPS_PORT:-18443}:18443"
+    networks:
+      default: {}
+      proxy:
+        aliases: [proxprox-api]
+
+  mcp:
+    networks:
+      default: {}
+      proxy:
+        aliases: [proxprox-mcp]
+    environment:
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp.proxprox.spiizn.xyz,mcp.proxprox.spiizn.xyz:*}
+
+networks:
+  proxy:
+    external: true
+    name: ${CADDY_NETWORK:-proxprox-proxy}
