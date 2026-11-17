@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -56,34 +57,7 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("dial %s through VPN: %v", r.Host, err))
 		return
 	}
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		connection.Close()
-		writeError(w, http.StatusInternalServerError, "HTTP server does not support CONNECT tunneling")
-		return
-	}
-	client, buffered, err := hijacker.Hijack()
-	if err != nil {
-		connection.Close()
-		log.Printf("VPN gateway hijack %s: %v", r.Host, err)
-		return
-	}
-	if _, err := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
-		client.Close()
-		connection.Close()
-		return
-	}
-	if err := buffered.Flush(); err != nil {
-		client.Close()
-		connection.Close()
-		return
-	}
-	go func() {
-		copyTunnel(connection, buffered.Reader, r.Host)
-	}()
-	copyTunnel(client, connection, r.Host)
-	client.Close()
-	connection.Close()
+	serveTunnel(w, connection, r.Host)
 }
 
 func (gateway *Gateway) dial(ctx context.Context, address string) (net.Conn, error) {
@@ -148,35 +122,40 @@ func runGateway(ctx context.Context, token, dnsIP, configPath, address string) e
 	server := &http.Server{Addr: address, Handler: &Gateway{token: token, dnsIP: dnsIP}, ReadHeaderTimeout: 10 * time.Second}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
+	shutdown := func() error {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownContext); err != nil {
+			return fmt.Errorf("stop VPN gateway HTTP server on %s: %w", address, err)
+		}
+		return nil
+	}
 	select {
 	case err := <-processDone:
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownContext)
+		shutdownError := shutdown()
 		if ctx.Err() != nil {
-			return nil
+			return shutdownError
 		}
 		if err != nil {
-			return fmt.Errorf("OpenVPN profile %q exited: %w", configPath, err)
+			return errors.Join(fmt.Errorf("OpenVPN profile %q exited: %w", configPath, err), shutdownError)
 		}
-		return fmt.Errorf("OpenVPN profile %q exited unexpectedly", configPath)
+		return errors.Join(fmt.Errorf("OpenVPN profile %q exited unexpectedly", configPath), shutdownError)
 	case err := <-serverDone:
-		if command.Process != nil {
-			_ = command.Process.Kill()
-		}
+		killError := command.Process.Kill()
 		<-processDone
 		if ctx.Err() != nil {
 			return nil
 		}
-		return fmt.Errorf("VPN gateway HTTP server on %s: %w", address, err)
-	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownContext)
-		if command.Process != nil {
-			_ = command.Process.Kill()
+		if errors.Is(killError, os.ErrProcessDone) {
+			killError = nil
 		}
+		if killError != nil {
+			killError = fmt.Errorf("stop OpenVPN profile %q: %w", configPath, killError)
+		}
+		return errors.Join(fmt.Errorf("VPN gateway HTTP server on %s: %w", address, err), killError)
+	case <-ctx.Done():
+		shutdownError := shutdown()
 		<-processDone
-		return nil
+		return shutdownError
 	}
 }

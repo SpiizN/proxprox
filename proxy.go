@@ -63,6 +63,10 @@ func (proxy *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("connect to %s via %s: %v", r.Host, decision.Route, err))
 		return
 	}
+	serveTunnel(w, target, r.Host)
+}
+
+func serveTunnel(w http.ResponseWriter, target net.Conn, name string) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		target.Close()
@@ -72,25 +76,21 @@ func (proxy *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 	client, buffered, err := hijacker.Hijack()
 	if err != nil {
 		target.Close()
-		log.Printf("hijack CONNECT %s: %v", r.Host, err)
+		log.Printf("hijack CONNECT %s: %v", name, err)
 		return
 	}
+	defer client.Close()
+	defer target.Close()
 	if _, err := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
-		client.Close()
-		target.Close()
+		log.Printf("write CONNECT response for %s: %v", name, err)
 		return
 	}
 	if err := buffered.Flush(); err != nil {
-		client.Close()
-		target.Close()
+		log.Printf("flush CONNECT response for %s: %v", name, err)
 		return
 	}
-	go func() {
-		copyTunnel(target, buffered.Reader, r.Host)
-	}()
-	copyTunnel(client, target, r.Host)
-	client.Close()
-	target.Close()
+	go copyTunnel(target, buffered.Reader, name)
+	copyTunnel(client, target, name)
 }
 
 func copyTunnel(destination net.Conn, source io.Reader, target string) {
@@ -218,9 +218,13 @@ func (proxy *Proxy) forwardUpgrade(w http.ResponseWriter, r *http.Request, respo
 			log.Printf("upgrade client-to-upstream copy for %s: %v", r.URL.Host, err)
 		}
 		if halfCloser, ok := upstream.(interface{ CloseWrite() error }); ok {
-			_ = halfCloser.CloseWrite()
+			if err := halfCloser.CloseWrite(); err != nil && !errors.Is(err, net.ErrClosed) {
+				log.Printf("close upgrade upstream write side for %s: %v", r.URL.Host, err)
+			}
 		} else {
-			_ = upstream.Close()
+			if err := upstream.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				log.Printf("close upgrade upstream for %s: %v", r.URL.Host, err)
+			}
 		}
 	}()
 	copyTunnel(client, upstream, r.URL.Host)
@@ -244,25 +248,14 @@ func (proxy *Proxy) transportFor(state State, decision Decision) (*http.Transpor
 		ResponseHeaderTimeout: 30 * time.Second,
 	}
 	if decision.Upstream != "" {
-		upstream, ok := state.getUpstream(decision.Upstream)
-		if !ok {
-			return nil, fmt.Errorf("upstream %q is missing", decision.Upstream)
-		}
-		u, err := parseUpstreamURL(upstream.URL)
+		u, err := upstreamURL(state, decision.Upstream)
 		if err != nil {
-			return nil, fmt.Errorf("upstream %q: %w", upstream.Name, err)
+			return nil, err
 		}
 		transport.Proxy = http.ProxyURL(u)
 	}
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if decision.VPN == "" {
-			return (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, address)
-		}
-		vpn, ok := state.getVPN(decision.VPN)
-		if !ok {
-			return nil, fmt.Errorf("VPN %q is missing", decision.VPN)
-		}
-		return proxy.dialGateway(ctx, vpn, address)
+		return proxy.dialTarget(ctx, state, decision.VPN, network, address)
 	}
 	return transport, nil
 }
@@ -270,31 +263,17 @@ func (proxy *Proxy) transportFor(state State, decision Decision) (*http.Transpor
 func (proxy *Proxy) dialRoute(ctx context.Context, state State, decision Decision, target string) (net.Conn, error) {
 	var upstream *url.URL
 	if decision.Upstream != "" {
-		item, ok := state.getUpstream(decision.Upstream)
-		if !ok {
-			return nil, fmt.Errorf("upstream %q is missing", decision.Upstream)
-		}
 		var err error
-		upstream, err = parseUpstreamURL(item.URL)
+		upstream, err = upstreamURL(state, decision.Upstream)
 		if err != nil {
-			return nil, fmt.Errorf("upstream %q: %w", item.Name, err)
+			return nil, err
 		}
 	}
 	endpoint := target
 	if upstream != nil {
 		endpoint = upstream.Host
 	}
-	var conn net.Conn
-	var err error
-	if decision.VPN == "" {
-		conn, err = (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, "tcp", endpoint)
-	} else {
-		vpn, ok := state.getVPN(decision.VPN)
-		if !ok {
-			return nil, fmt.Errorf("VPN %q is missing", decision.VPN)
-		}
-		conn, err = proxy.dialGateway(ctx, vpn, endpoint)
-	}
+	conn, err := proxy.dialTarget(ctx, state, decision.VPN, "tcp", endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", endpoint, err)
 	}
@@ -315,6 +294,29 @@ func (proxy *Proxy) dialRoute(ctx context.Context, state State, decision Decisio
 		return nil, fmt.Errorf("CONNECT through upstream %s to %s: %w", upstream.Host, target, err)
 	}
 	return conn, nil
+}
+
+func upstreamURL(state State, name string) (*url.URL, error) {
+	upstream, ok := state.getUpstream(name)
+	if !ok {
+		return nil, fmt.Errorf("upstream %q is missing", name)
+	}
+	u, err := parseUpstreamURL(upstream.URL)
+	if err != nil {
+		return nil, fmt.Errorf("upstream %q: %w", name, err)
+	}
+	return u, nil
+}
+
+func (proxy *Proxy) dialTarget(ctx context.Context, state State, vpnName, network, address string) (net.Conn, error) {
+	if vpnName == "" {
+		return (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, address)
+	}
+	vpn, ok := state.getVPN(vpnName)
+	if !ok {
+		return nil, fmt.Errorf("VPN %q is missing", vpnName)
+	}
+	return proxy.dialGateway(ctx, vpn, address)
 }
 
 func (proxy *Proxy) dialGateway(ctx context.Context, vpn VPN, target string) (net.Conn, error) {
