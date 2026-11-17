@@ -129,7 +129,7 @@ curl --proxy https://proxy.proxprox.spiizn.xyz:18443 \
 Burp's upstream proxy setting expects a plain HTTP proxy. The local bridge accepts Burp's HTTP proxy traffic on loopback and connects to Proxprox over TLS:
 
 ```sh
-./scripts/install-proxprox-bridge-macos.sh
+./proxprox/install-bridge-macos.sh
 ```
 
 In Burp Settings > Network > Connections > Upstream proxy servers, add destination `*`, host `127.0.0.1`, port `18081`, and Basic credentials `proxy` / `PROXY_TOKEN`. The installer creates a LaunchAgent and writes errors to `~/Library/Logs/proxprox-bridge.log`. Re-run it after changing the bridge code.

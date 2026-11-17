@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    build: ./proxprox
     restart: unless-stopped
     environment:
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
@@ -30,9 +30,7 @@ services:
       retries: 3
 
   mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
+    build: ./mcp
     restart: unless-stopped
     environment:
       API_URL: http://app:8000
@@ -59,7 +57,7 @@ services:
   vpn-yeswehack:
     profiles:
       - vpn-yeswehack
-    build: .
+    build: ./proxprox
     restart: unless-stopped
     environment:
       APP_MODE: gateway

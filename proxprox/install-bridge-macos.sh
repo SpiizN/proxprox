@@ -6,7 +6,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
     exit 1
 fi
 
-project_root=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
+module_root=$(CDPATH= cd "$(dirname "$0")" && pwd)
 install_dir="$HOME/.local/bin"
 launch_dir="$HOME/Library/LaunchAgents"
 service_label="com.proxprox.burp-bridge"
@@ -16,7 +16,7 @@ agent_plist="$launch_dir/$service_label.plist"
 mkdir -p "$install_dir" "$launch_dir" "$HOME/Library/Logs"
 temp_binary=$(mktemp "$install_dir/proxprox-bridge.XXXXXX")
 trap 'rm -f "$temp_binary"' EXIT
-(cd "$project_root" && go build -o "$temp_binary" ./cmd/bridge)
+(cd "$module_root" && go build -o "$temp_binary" ./cmd/bridge)
 chmod 755 "$temp_binary"
 mv -f "$temp_binary" "$install_dir/proxprox-bridge"
 trap - EXIT

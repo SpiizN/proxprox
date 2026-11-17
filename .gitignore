@@ -3,4 +3,4 @@ data/
 vpn/*/*
 !vpn/*/README.md
 __pycache__/
-proxprox
+/proxprox/proxprox
